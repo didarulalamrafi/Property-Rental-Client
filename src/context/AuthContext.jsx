@@ -1,127 +1,119 @@
-"use client"
+// context/AuthContext.js
 
-import { createContext, useEffect, useState } from 'react'
+"use client";
+
+import { createContext, useEffect, useState, useContext } from "react";
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   onAuthStateChanged,
-  updateProfile
-} from 'firebase/auth'
-import { auth, googleProvider } from '../lib/firebase'
-import axios from 'axios'
+  updateProfile,
+} from "firebase/auth";
+import { auth, googleProvider } from "../lib/firebase";
 
-export const AuthContext = createContext(null)
+export const AuthContext = createContext(null);
 
 const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null)
-  const [dbUser, setDbUser] = useState(null)
-  const [token, setToken] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL
+  // Register (Firebase)
+  const registerUser = async (
+    name,
+    email,
+    password,
+    photo,
+    role = "tenant",
+  ) => {
+    setLoading(true);
+    try {
+      const result = await createUserWithEmailAndPassword(
+        auth,
+        email,
+        password,
+      );
+      await updateProfile(result.user, { displayName: name, photoURL: photo });
+      setUser(result.user);
+      return result;
+    } catch (error) {
+      console.error("Register Error:", error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const registerUser = async (name, email, password, photo, role = 'tenant') => {
-    setLoading(true)
-    const result = await createUserWithEmailAndPassword(auth, email, password)
-    await updateProfile(result.user, { displayName: name, photoURL: photo })
-
-    const res = await axios.post(`${apiUrl}/auth/register`, {
-      name, email, photo, role
-    })
-
-    localStorage.setItem('token', res.data.token)
-    setToken(res.data.token)
-    setDbUser(res.data.user)
-    return result
-  }
-
+  // Login (Firebase)
   const loginUser = async (email, password) => {
-    setLoading(true)
-    const result = await signInWithEmailAndPassword(auth, email, password)
+    setLoading(true);
+    try {
+      const result = await signInWithEmailAndPassword(auth, email, password);
+      setUser(result.user);
+      return result;
+    } catch (error) {
+      console.error("Login Error:", error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const res = await axios.post(`${apiUrl}/auth/login`, {
-      name: result.user.displayName,
-      email: result.user.email,
-      photo: result.user.photoURL
-    })
-
-    localStorage.setItem('token', res.data.token)
-    setToken(res.data.token)
-    setDbUser(res.data.user)
-    return result
-  }
-
+  //  Google Login (Firebase)
   const googleLogin = async () => {
-    setLoading(true)
-    const result = await signInWithPopup(auth, googleProvider)
+    setLoading(true);
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      setUser(result.user);
+      return result;
+    } catch (error) {
+      console.error("Google Login Error:", error);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    const res = await axios.post(`${apiUrl}/auth/login`, {
-      name: result.user.displayName,
-      email: result.user.email,
-      photo: result.user.photoURL
-    })
-
-    localStorage.setItem('token', res.data.token)
-    setToken(res.data.token)
-    setDbUser(res.data.user)
-    return result
-  }
-
-  const logoutUser = () => {
-    localStorage.removeItem('token')
-    setToken(null)
-    setDbUser(null)
-    return signOut(auth)
-  }
-
-  useEffect(() => {
-    setToken(localStorage.getItem('token'))
-  }, [])
+  //  Logout
+  const logoutUser = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+    } catch (error) {
+      console.error("Logout Error:", error);
+      throw error;
+    }
+  };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      setUser(currentUser)
-
-      if (currentUser && token) {
-        try {
-          const res = await axios.get(`${apiUrl}/users/${currentUser.email}`, {
-            headers: {
-              Authorization: `Bearer ${token}`
-            }
-          })
-          setDbUser(res.data)
-        } catch (error) {
-          console.log('Error fetching db user:', error.message)
-        }
-      } else {
-        setDbUser(null)
-      }
-
-      setLoading(false)
-    })
-
-    return () => unsubscribe()
-  }, [apiUrl, token])
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const authInfo = {
     user,
-    dbUser,
-    token,
     loading,
     registerUser,
     loginUser,
     googleLogin,
-    logoutUser
-  }
+    logoutUser,
+  };
 
   return (
-    <AuthContext.Provider value={authInfo}>
-      {children}
-    </AuthContext.Provider>
-  )
-}
+    <AuthContext.Provider value={authInfo}>{children}</AuthContext.Provider>
+  );
+};
 
-export default AuthProvider
- 
+export default AuthProvider;
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within AuthProvider");
+  }
+  return context;
+};
